@@ -1,0 +1,85 @@
+# ---- C# / .NET ----
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Rider / JetBrains
+.idea/
+
+# Logs
+*.log
+logs/
+LogFiles/
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# NuGet
+*.nupkg
+*.snupkg
+*.nuspec
+*.nuget/
+packages/
+
+# Coverage
+*.coverage
+*.coveragexml
+TestResult*/
+coverage/
+
+# ---- Node / React ----
+node_modules/
+dist/
+build/
+.npm/
+.pnp/
+.pnp.js
+*.tsbuildinfo
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Tailwind / PostCSS caches
+*.cache/
+.postcssrc.js
+tailwind.config.js.timestamp-*
+
+# ---- SQLite / Data ----
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.db-journal
+dbconnect.db
+.dbconnect/
+
+# ---- OS / Misc ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ---- WSL ----
+/mnt/
+
+
+# arquivos temporários de cookies
+cookies*.txt
