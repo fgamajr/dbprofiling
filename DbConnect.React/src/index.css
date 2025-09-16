@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* DbConnect Design System - Modern Database Management Interface */
+
+@layer base {
+  :root {
+    /* Core Brand Colors */
+    --background: 240 10% 98%;
+    --foreground: 230 15% 15%;
+    
+    /* Brand Identity */
+    --brand-primary: 220 90% 56%;
+    --brand-secondary: 200 95% 50%;
+    --brand-accent: 260 85% 65%;
+    --brand-dark: 230 25% 25%;
+    
+    /* Surface Colors */
+    --card: 0 0% 100%;
+    --card-foreground: 230 15% 15%;
+    --card-hover: 220 20% 97%;
+    
+    /* Interactive Elements */
+    --primary: 220 90% 56%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 220 85% 48%;
+    
+    --secondary: 220 15% 96%;
+    --secondary-foreground: 230 15% 15%;
+    --secondary-hover: 220 20% 92%;
+    
+    /* Status Colors */
+    --success: 145 80% 42%;
+    --success-foreground: 0 0% 100%;
+    --success-bg: 145 60% 95%;
+    
+    --error: 0 75% 60%;
+    --error-foreground: 0 0% 100%;
+    --error-bg: 0 50% 96%;
+    
+    --warning: 45 90% 55%;
+    --warning-foreground: 0 0% 100%;
+    --warning-bg: 45 80% 95%;
+    
+    /* Neutral Palette */
+    --muted: 220 15% 96%;
+    --muted-foreground: 230 10% 50%;
+    --border: 220 15% 88%;
+    --input: 220 15% 96%;
+    --ring: 220 90% 56%;
+    
+    /* Sidebar */
+    --sidebar: 230 20% 99%;
+    --sidebar-border: 220 15% 92%;
+    --sidebar-active: 220 90% 56%;
+    --sidebar-hover: 220 25% 95%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(220, 90%, 56%), hsl(260, 85%, 65%));
+    --gradient-hero: linear-gradient(135deg, hsl(220, 90%, 56%) 0%, hsl(200, 95%, 50%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(0, 0%, 100%) 0%, hsl(220, 20%, 99%) 100%);
+    --gradient-surface: linear-gradient(180deg, hsl(240, 10%, 98%) 0%, hsl(220, 15%, 96%) 100%);
+    
+    /* Shadows */
+    --shadow-sm: 0 2px 8px hsl(220, 20%, 80%, 0.12);
+    --shadow-md: 0 4px 16px hsl(220, 20%, 70%, 0.15);
+    --shadow-lg: 0 8px 32px hsl(220, 20%, 60%, 0.18);
+    --shadow-brand: 0 4px 20px hsl(220, 90%, 56%, 0.25);
+    
+    /* Typography */
+    --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+    
+    --radius: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+  }
+  
+  .dark {
+    --background: 230 25% 8%;
+    --foreground: 220 15% 92%;
+    
+    --card: 230 20% 12%;
+    --card-foreground: 220 15% 92%;
+    --card-hover: 230 20% 15%;
+    
+    --primary: 220 90% 62%;
+    --primary-foreground: 230 25% 8%;
+    --primary-hover: 220 85% 58%;
+    
+    --secondary: 230 15% 18%;
+    --secondary-foreground: 220 15% 85%;
+    --secondary-hover: 230 15% 22%;
+    
+    --muted: 230 15% 18%;
+    --muted-foreground: 220 10% 65%;
+    --border: 230 15% 22%;
+    --input: 230 15% 18%;
+    
+    --sidebar: 230 25% 10%;
+    --sidebar-border: 230 15% 20%;
+    --sidebar-hover: 230 20% 16%;
+    
+    --gradient-card: linear-gradient(145deg, hsl(230, 20%, 12%) 0%, hsl(230, 15%, 15%) 100%);
+    --gradient-surface: linear-gradient(180deg, hsl(230, 25%, 8%) 0%, hsl(230, 20%, 10%) 100%);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
