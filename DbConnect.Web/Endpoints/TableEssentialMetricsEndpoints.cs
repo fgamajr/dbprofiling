@@ -51,6 +51,11 @@ public static class TableEssentialMetricsEndpoints
             .WithTags("Test Metrics")
             .WithSummary("Teste outliers paginados (sem autenticação)");
 
+        // Endpoint simplificado para outliers paginados
+        app.MapGet("/api/simple-outliers/{schema}/{tableName}/{columnName}", GetOutliersPaginatedSimple)
+            .WithTags("Test Metrics")
+            .WithSummary("Outliers paginados (endpoint simplificado)");
+
         // TODO: Implementar outros endpoints após migration
         /*
         group.MapGet("/table/{schema}/{tableName}", GetTableMetrics)
@@ -257,8 +262,14 @@ public static class TableEssentialMetricsEndpoints
         {
             Console.WriteLine($"🧪 TESTE AVANÇADO: Iniciando análise avançada para {request.Schema}.{request.TableName}");
 
-            // Para teste, usar conexão direta com o banco local
-            var connectionString = "Host=localhost;Port=5433;Database=appdb;Username=appuser;Password=apppass;";
+            // Buscar primeiro perfil disponível para teste
+            var profile = await db.Profiles.FirstOrDefaultAsync();
+            if (profile == null)
+            {
+                return Results.BadRequest(new { message = "Nenhum perfil de conexão encontrado para teste." });
+            }
+
+            var connectionString = BuildConnectionString(profile);
             var startTime = DateTime.UtcNow;
 
             // Análise de padrões e outliers por coluna (REAL)
@@ -396,13 +407,20 @@ public static class TableEssentialMetricsEndpoints
         string tableName,
         string columnName,
         IPatternAnalysisService patternAnalysisService,
+        AppDbContext db,
         int page = 0,
         int pageSize = 20)
     {
         try
         {
-            // Para teste, usar conexão hardcoded PostgreSQL
-            var testConnectionString = "Host=localhost;Port=5433;Database=appdb;Username=appuser;Password=apppass;";
+            // Buscar primeiro perfil disponível para teste
+            var profile = await db.Profiles.FirstOrDefaultAsync();
+            if (profile == null)
+            {
+                return Results.BadRequest(new { message = "Nenhum perfil de conexão encontrado para teste." });
+            }
+
+            var testConnectionString = BuildConnectionString(profile);
 
             using var connection = patternAnalysisService.GetType()
                 .GetMethod("CreateConnection", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?
@@ -435,6 +453,72 @@ public static class TableEssentialMetricsEndpoints
             }
 
             return Results.Ok(outlierAnalysis);
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem($"Erro interno: {ex.Message}");
+        }
+    }
+
+    private static async Task<IResult> GetOutliersPaginatedSimple(
+        string schema,
+        string tableName,
+        string columnName,
+        IPatternAnalysisService patternAnalysisService,
+        AppDbContext db,
+        int page = 0,
+        int pageSize = 20)
+    {
+        try
+        {
+            // Buscar primeiro perfil disponível para teste
+            var profile = await db.Profiles.FirstOrDefaultAsync();
+            if (profile == null)
+            {
+                return Results.BadRequest(new { message = "Nenhum perfil de conexão encontrado para teste." });
+            }
+
+            var connectionString = BuildConnectionString(profile);
+            var result = await patternAnalysisService.AnalyzeTablePatterns(connectionString, schema, tableName);
+
+            if (result == null)
+            {
+                return Results.BadRequest(new { error = "Nenhuma métrica encontrada" });
+            }
+
+            var columnMetric = result.FirstOrDefault(c => c.ColumnName == columnName);
+            if (columnMetric?.OutlierAnalysis == null)
+            {
+                return Results.BadRequest(new { error = $"Nenhum outlier encontrado para a coluna {columnName}" });
+            }
+
+            var outlierAnalysis = columnMetric.OutlierAnalysis;
+
+            // Simular paginação nos dados existentes
+            var totalOutliers = outlierAnalysis.OutlierCount;
+            var totalPages = Math.Ceiling((double)totalOutliers / pageSize);
+            var startIdx = page * pageSize;
+
+            // Para simulação, usar os outliers de exemplo, mas com paginação correta
+            var pagedOutliers = outlierAnalysis.OutlierRows?.Skip(startIdx).Take(pageSize).ToList() ?? new List<OutlierRowData>();
+
+            var pagedAnalysis = new OutlierAnalysis
+            {
+                TotalValues = outlierAnalysis.TotalValues,
+                OutlierCount = outlierAnalysis.OutlierCount,
+                OutlierPercentage = outlierAnalysis.OutlierPercentage,
+                Mean = outlierAnalysis.Mean,
+                StandardDeviation = outlierAnalysis.StandardDeviation,
+                LowerBound = outlierAnalysis.LowerBound,
+                UpperBound = outlierAnalysis.UpperBound,
+                SampleOutliers = pagedOutliers.Select(r => r.OutlierValue).ToList(),
+                OutlierRows = pagedOutliers,
+                CurrentPage = page,
+                PageSize = pageSize
+                // TotalPages é calculado automaticamente baseado em OutlierCount e PageSize
+            };
+
+            return Results.Ok(pagedAnalysis);
         }
         catch (Exception ex)
         {

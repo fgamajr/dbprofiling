@@ -5,6 +5,15 @@ import {
   Eye, ExternalLink, Fingerprint, Activity
 } from 'lucide-react';
 import { LoadingSpinner } from './LoadingSpinner';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface AdvancedMetricsCardProps {
   schema: string;
@@ -85,237 +94,144 @@ interface AdvancedTableMetrics {
 }
 
 export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetricsCardProps) {
-  const [loading, setLoading] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [metrics, setMetrics] = useState<AdvancedTableMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedColumns, setExpandedColumns] = useState<Set<string>>(new Set());
-  const [expandedRelationships, setExpandedRelationships] = useState<Set<string>>(new Set());
-  const [outlierPages, setOutlierPages] = useState<Record<string, OutlierAnalysis>>({});
+  const [outlierData, setOutlierData] = useState<Record<string, OutlierAnalysis>>({});
   const [loadingOutliers, setLoadingOutliers] = useState<Record<string, boolean>>({});
-  const [currentOutlierPages, setCurrentOutlierPages] = useState<Record<string, number>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Load page 0 for columns with outliers when metrics are first available
+  // Auto-generate first page from existing data
   useEffect(() => {
-    console.log(`🎯 [AUTO_LOAD] useEffect triggered for initial page loading`, {
-      hasMetrics: !!metrics?.columnMetrics,
-      columnCount: metrics?.columnMetrics?.length,
-      currentOutlierPages: Object.keys(outlierPages),
-      currentLoadingStates: Object.keys(loadingOutliers).filter(key => loadingOutliers[key])
-    });
-
     if (metrics?.columnMetrics) {
       metrics.columnMetrics.forEach(column => {
         if (column.outlierAnalysis && column.outlierAnalysis.outlierCount > 0) {
-          const pageKey = `${column.columnName}-0`;
-          const hasData = outlierPages[pageKey];
-          const isLoading = loadingOutliers[pageKey];
+          const columnKey = column.columnName;
+          const hasData = outlierData[columnKey];
 
-          console.log(`📋 [AUTO_LOAD] Checking column ${column.columnName}:`, {
-            outlierCount: column.outlierAnalysis.outlierCount,
-            pageKey,
-            hasData: !!hasData,
-            isLoading: !!isLoading,
-            shouldAutoLoad: !hasData && !isLoading
-          });
-
-          // Only load if not already loaded and not currently loading
-          if (!hasData && !isLoading) {
-            console.log(`🚀 [AUTO_LOAD] Auto-loading page 1 for ${column.columnName}`);
-            loadOutlierPage(column.columnName, 0);
-          } else {
-            console.log(`⏭️ [AUTO_LOAD] Skipping auto-load for ${column.columnName} - already available`);
+          if (!hasData) {
+            // Generate page 1 with same logic as other pages for consistency
+            loadOutlierPage(column.columnName, 1);
           }
-        } else {
-          console.log(`📋 [AUTO_LOAD] Skipping column ${column.columnName} - no outliers or analysis`);
         }
       });
     }
-  }, [metrics?.columnMetrics, outlierPages, loadingOutliers]);
+  }, [metrics?.columnMetrics]);
 
-  // Helper function to handle page navigation with auto-loading
-  const navigateToPage = async (columnName: string, page: number, forceReload: boolean = false) => {
-    console.log(`🧭 [NAVIGATION] Navigating to page ${page + 1} for column ${columnName}`, {
-      forceReload,
-      currentPages: currentOutlierPages,
-      loadingStates: loadingOutliers,
-      availablePages: Object.keys(outlierPages)
-    });
+  // Navigate to a specific page
+  const navigateToPage = async (columnName: string, page: number) => {
+    const columnKey = columnName;
+    const isLoading = loadingOutliers[columnKey];
 
-    // Update current page immediately for UI responsiveness
-    setCurrentOutlierPages(prev => ({ ...prev, [columnName]: page }));
-
-    // Check if data is already loaded
-    const pageKey = `${columnName}-${page}`;
-    const hasData = outlierPages[pageKey];
-    const isLoading = loadingOutliers[pageKey];
-
-    console.log(`🔍 [NAVIGATION] Page ${page + 1} status:`, {
-      pageKey,
-      hasData: !!hasData,
-      isLoading: !!isLoading,
-      shouldLoad: forceReload || (!hasData && !isLoading)
-    });
-
-    if (forceReload || (!hasData && !isLoading)) {
-      console.log(`📥 [NAVIGATION] Loading page ${page + 1} for ${columnName}...`);
+    if (!isLoading) {
       await loadOutlierPage(columnName, page);
-    } else {
-      console.log(`⏭️ [NAVIGATION] Skipping load for page ${page + 1} - data already available or loading`);
     }
   };
 
   async function loadOutlierPage(columnName: string, page: number, pageSize: number = 20) {
-    const key = `${columnName}-${page}`;
-    console.log(`🚀 [LOAD_PAGE] Starting to load page ${page + 1} for column ${columnName}`, {
-      key,
-      pageSize,
-      currentState: {
-        loadingStates: loadingOutliers,
-        availablePages: Object.keys(outlierPages)
-      }
-    });
+    const columnKey = columnName;
 
-    setLoadingOutliers(prev => ({ ...prev, [key]: true }));
+    setLoadingOutliers(prev => ({ ...prev, [columnKey]: true }));
 
     try {
-      // Get the column data for baseline statistics
       const column = metrics?.columnMetrics.find(c => c.columnName === columnName);
       if (!column?.outlierAnalysis) {
-        console.error(`❌ [LOAD_PAGE] No outlier analysis found for column ${columnName}`);
         throw new Error('Dados de outlier não disponíveis');
       }
 
-      console.log(`📊 [LOAD_PAGE] Column stats for ${columnName}:`, {
-        outlierCount: column.outlierAnalysis.outlierCount,
-        sampleOutliersLength: column.outlierAnalysis.sampleOutliers.length,
-        mean: column.outlierAnalysis.mean,
-        page: page + 1
-      });
-
       const { outlierCount, totalValues, mean, standardDeviation, lowerBound, upperBound } = column.outlierAnalysis;
       const totalPages = Math.ceil(outlierCount / pageSize);
+      const zeroBasedPage = page - 1; // Convert to zero-based for API
 
-      console.log(`🧮 [LOAD_PAGE] Pagination calculation:`, {
-        outlierCount,
-        pageSize,
-        totalPages,
-        requestedPage: page + 1
-      });
+      // Try to fetch ALL outliers for this column if not already cached
+      const allOutliersKey = `${columnKey}_all_outliers`;
+      let allOutliers = (window as any)[allOutliersKey];
 
-      // Try to get real paginated data from the backend
-      const apiUrl = `/api/data-quality/outliers?col=${columnName}&page=${page}&size=${pageSize}`;
-      console.log(`🌐 [LOAD_PAGE] Attempting API call to: ${apiUrl}`);
+      if (!allOutliers) {
+        // First time: try to fetch ALL outliers using a special endpoint
+        try {
+          const apiUrl = `/api/simple-outliers/${schema}/${tableName}/${columnName}?page=0&pageSize=${outlierCount}`; // Request ALL outliers
 
-      try {
-        const response = await fetch(apiUrl, {
-          signal: abortControllerRef.current?.signal
-        });
-
-        console.log(`📡 [LOAD_PAGE] API response:`, {
-          status: response.status,
-          statusText: response.statusText,
-          ok: response.ok,
-          url: response.url
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log(`✅ [LOAD_PAGE] API success! Got data:`, {
-            itemsCount: data.items?.length || 0,
-            totalPages: data.totalPages,
-            currentPage: data.currentPage,
-            data: data
+          const response = await fetch(apiUrl, {
+            signal: abortControllerRef.current?.signal
           });
 
-          const outlierAnalysis: OutlierAnalysis = {
-            totalValues,
-            outlierCount,
-            outlierPercentage: (outlierCount / totalValues) * 100,
-            mean,
-            standardDeviation,
-            lowerBound,
-            upperBound,
-            sampleOutliers: data.items?.map((item: any) => item.outlierValue) || [],
-            outlierRows: data.items || [],
-            currentPage: page,
-            pageSize,
-            totalPages: data.totalPages || totalPages
-          };
+          if (response.ok) {
+            const data = await response.json();
+            allOutliers = data.outlierRows || [];
 
-          console.log(`💾 [LOAD_PAGE] Storing API data for ${key}:`, outlierAnalysis);
-          setOutlierPages(prev => ({ ...prev, [key]: outlierAnalysis }));
-          return;
-        } else {
-          console.warn(`⚠️ [LOAD_PAGE] API failed with status ${response.status}`);
+            // Cache all outliers globally for this column
+            (window as any)[allOutliersKey] = allOutliers;
+            console.log(`✅ Loaded ${allOutliers.length} outliers for frontend pagination`);
+          }
+        } catch (apiError) {
+          console.log('⚠️ API failed, falling back to sample data');
         }
-      } catch (apiError) {
-        console.warn(`⚠️ [LOAD_PAGE] API error:`, apiError);
       }
 
-      // Fallback: Use simulation with proper pagination for the UI
-      console.log(`🎭 [LOAD_PAGE] Using simulation fallback for page ${page + 1}`);
-      const { sampleOutliers } = column.outlierAnalysis;
-      const startIdx = page * pageSize;
-      const endIdx = startIdx + pageSize;
-      const pageOutliers = sampleOutliers.slice(startIdx, endIdx);
+      // Use ALL outliers if available, otherwise fall back to sample
+      const sourceData = allOutliers && allOutliers.length > 0 ? allOutliers : column.outlierAnalysis.outlierRows;
+      const dataSourceInfo = allOutliers && allOutliers.length > 0 ? 'all outliers' : 'sample data';
 
-      console.log(`🔢 [LOAD_PAGE] Simulation data:`, {
-        sampleOutliersTotal: sampleOutliers.length,
-        startIdx,
-        endIdx,
-        pageOutliersCount: pageOutliers.length,
-        pageOutliers: pageOutliers.slice(0, 3) // Show first 3 for debugging
+      if (!sourceData || sourceData.length === 0) {
+        // No data available, return empty
+        const outlierAnalysis: OutlierAnalysis = {
+          ...column.outlierAnalysis,
+          outlierRows: [],
+          sampleOutliers: [],
+          currentPage: page,
+          pageSize,
+        };
+        setOutlierData(prev => ({ ...prev, [columnKey]: outlierAnalysis }));
+        return;
+      }
+
+      console.log(`📊 Using ${dataSourceInfo}: ${sourceData.length} outliers available for pagination`);
+
+      // Sort all available outlier data by the outlier value (descending)
+      const sortedAllRows = [...sourceData].sort((a, b) => {
+        const aValue = typeof a.outlierValue === 'number' ? a.outlierValue : 0;
+        const bValue = typeof b.outlierValue === 'number' ? b.outlierValue : 0;
+        return bValue - aValue;
       });
 
-      // Even if no data on this simulated page, still create proper structure
-      const simulatedRows = pageOutliers.map((outlier, idx) => ({
-        outlierValue: outlier,
-        outlierColumn: columnName,
-        rowData: {
-          [columnName]: outlier,
-          'id': startIdx + idx + 1,
-          'status': 'ativo',
-          'created_at': '2025-09-16',
-          'updated_at': '2025-09-16'
-        }
-      }));
+      // Paginate the data (either all outliers or sample)
+      const startIdx = zeroBasedPage * pageSize;
+      const endIdx = startIdx + pageSize;
+      const pageOutliers = sortedAllRows.slice(startIdx, endIdx);
+
+      // Calculate total pages based on available data
+      const actualOutlierCount = sortedAllRows.length;
+      const actualTotalPages = Math.ceil(actualOutlierCount / pageSize);
+
+      // If using all outliers, use the original outlierCount for display; if sample, use actual count
+      const displayCount = allOutliers && allOutliers.length > 0 ? outlierCount : actualOutlierCount;
 
       const outlierAnalysis: OutlierAnalysis = {
         totalValues,
-        outlierCount,
-        outlierPercentage: (outlierCount / totalValues) * 100,
+        outlierCount: displayCount, // Original count for display purposes
+        outlierPercentage: (displayCount / totalValues) * 100,
         mean,
         standardDeviation,
         lowerBound,
         upperBound,
-        sampleOutliers: pageOutliers,
-        outlierRows: simulatedRows,
+        sampleOutliers: pageOutliers, // Current page data
+        outlierRows: pageOutliers,    // Current page data
         currentPage: page,
         pageSize,
-        totalPages // Use the real total pages based on outlierCount
+        totalPages: actualTotalPages // Pages based on available data
       };
 
-      console.log(`🎭 [LOAD_PAGE] Created simulation data for ${key}:`, {
-        outlierRowsCount: outlierAnalysis.outlierRows.length,
-        sampleOutliersCount: outlierAnalysis.sampleOutliers.length,
-        totalPages: outlierAnalysis.totalPages
-      });
-
-      // Simular delay de rede
-      console.log(`⏱️ [LOAD_PAGE] Simulating network delay...`);
+      // Simulate network delay
       await new Promise(resolve => setTimeout(resolve, 300));
-
-      console.log(`💾 [LOAD_PAGE] Storing simulation data for ${key}`);
-      setOutlierPages(prev => ({ ...prev, [key]: outlierAnalysis }));
+      setOutlierData(prev => ({ ...prev, [columnKey]: outlierAnalysis }));
 
     } catch (error) {
-      console.error(`❌ [LOAD_PAGE] Error loading page ${page + 1}:`, error);
+      console.error('Error loading outlier page:', error);
       onToast?.({ type: 'error', message: 'Erro ao carregar outliers paginados' });
     } finally {
-      console.log(`🔄 [LOAD_PAGE] Clearing loading state for ${key}`);
-      setLoadingOutliers(prev => ({ ...prev, [key]: false }));
+      setLoadingOutliers(prev => ({ ...prev, [columnKey]: false }));
     }
   }
 
@@ -436,11 +352,11 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
             {metrics && (
               <button
                 onClick={() => setMetrics(null)}
-                disabled={loading}
+                disabled={collecting}
                 className="p-2 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors"
                 title="Limpar análise"
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${collecting ? 'animate-spin' : ''}`} />
               </button>
             )}
             <button
@@ -473,7 +389,7 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
           </div>
         )}
 
-        {loading ? (
+        {collecting ? (
           <div className="text-center py-8">
             <LoadingSpinner size="lg" className="mb-4 text-purple-600" />
             <p className="text-gray-600">Executando análise avançada...</p>
@@ -589,10 +505,10 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                             {/* Padrões Detectados */}
                             {hasPatterns && (
                               <div>
-                                <h7 className="font-medium text-purple-800 mb-2 flex items-center gap-2">
+                                <div className="font-medium text-purple-800 mb-2 flex items-center gap-2">
                                   <Target className="w-4 h-4" />
                                   Padrões Detectados
-                                </h7>
+                                </div>
                                 <div className="space-y-3">
                                   {column.patternMatches.map((pattern, pIndex) => (
                                     <div key={pIndex} className={`p-3 rounded-lg border ${getConformityColor(pattern.conformityPercentage)}`}>
@@ -650,10 +566,10 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                             {/* Análise de Outliers */}
                             {hasOutliers && column.outlierAnalysis && (
                               <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                                <h7 className="font-medium text-orange-800 mb-2 flex items-center gap-2">
+                                <div className="font-medium text-orange-800 mb-2 flex items-center gap-2">
                                   <AlertTriangle className="w-4 h-4" />
                                   Outliers Estatísticos (Regra 3σ)
-                                </h7>
+                                </div>
 
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                                   <div className="text-center">
@@ -682,7 +598,7 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                   </div>
                                 </div>
 
-                                <div className="text-sm text-orange-700 mb-2">
+                                <div className="text-sm text-orange-700 mb-4">
                                   <div><strong>Limites (3σ):</strong></div>
                                   <div className="font-mono text-xs">
                                     Inferior: {column.outlierAnalysis.lowerBound.toFixed(2)} |
@@ -690,169 +606,130 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                   </div>
                                 </div>
 
-                                {/* Tabela detalhada dos outliers - sempre mostrar se existem outliers */}
-                                {column.outlierAnalysis.sampleOutliers.length > 0 && (
+                                {/* Tabela detalhada dos outliers com paginação adequada */}
+                                {column.outlierAnalysis.outlierCount > 0 && (
                                   <div className="mt-4">
                                     {(() => {
-                                      // Use dados paginados se disponíveis, senão use os dados originais
-                                      const currentPage = currentOutlierPages[column.columnName] ?? 0;
-                                      const pageKey = `${column.columnName}-${currentPage}`;
-                                      const currentPageData = outlierPages[pageKey];
+                                      const columnKey = column.columnName;
+                                      const currentPageData = outlierData[columnKey];
                                       const displayData = currentPageData?.outlierRows || [];
-                                      // Calculate total pages based on the real outlier count
-                                      const totalPages = Math.ceil(column.outlierAnalysis.outlierCount / 20);
-                                      const hasMultiplePages = totalPages > 1;
+                                      const currentPage = currentPageData?.currentPage || 1;
+                                      const totalPages = currentPageData?.totalPages || Math.ceil(column.outlierAnalysis.outlierCount / 20);
+                                      const isLoading = loadingOutliers[columnKey];
 
-                                      // Se temos dados paginados ou se é uma tabela que deveria ter paginação
-                                      const shouldShowTable = currentPageData?.outlierRows || hasMultiplePages;
-
-                                      return shouldShowTable ? (
+                                      return (
                                         <div>
-                                          <div className="text-sm font-medium mb-2">
-                                            🔍 Linhas com outliers (página {currentPage + 1} de {totalPages}) - {column.outlierAnalysis.outlierCount.toLocaleString()} total:
+                                          <div className="text-sm font-medium mb-3 flex items-center gap-2">
+                                            🔍 <span>Outliers ordenados (maiores primeiro) - Página {currentPage} de {totalPages}</span>
+                                            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">
+                                              {column.outlierAnalysis.outlierCount.toLocaleString()} total
+                                            </span>
                                           </div>
 
-                                          {/* Controles de paginação avançados */}
-                                          <div className="flex items-center justify-between mb-2">
-                                            <div className="flex items-center gap-1">
-                                              {/* Primeira página */}
-                                              <button
-                                                onClick={() => navigateToPage(column.columnName, 0)}
-                                                disabled={currentPage === 0 || loadingOutliers[pageKey]}
-                                                className="px-2 py-1 text-xs bg-gray-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed"
-                                                title="Primeira"
-                                              >
-                                                ««
-                                              </button>
+                                          {/* Paginação usando componente padronizado */}
+                                          {totalPages > 1 && (
+                                            <div className="mb-4">
+                                              <Pagination>
+                                                <PaginationContent>
+                                                  <PaginationItem>
+                                                    <PaginationPrevious
+                                                      onClick={() => currentPage > 1 && navigateToPage(column.columnName, currentPage - 1)}
+                                                      className={currentPage <= 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                                                    />
+                                                  </PaginationItem>
 
-                                              {/* Página anterior */}
-                                              <button
-                                                onClick={() => navigateToPage(column.columnName, Math.max(0, currentPage - 1))}
-                                                disabled={currentPage === 0 || loadingOutliers[pageKey]}
-                                                className="px-2 py-1 text-xs bg-blue-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed"
-                                                title="Anterior"
-                                              >
-                                                ← Anterior
-                                              </button>
+                                                  {(() => {
+                                                    const pages = [];
+                                                    const maxVisible = 5;
+                                                    const halfVisible = Math.floor(maxVisible / 2);
+                                                    let startPage = Math.max(1, currentPage - halfVisible);
+                                                    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
 
-                                              {/* Números de página */}
-                                              <div className="flex items-center gap-1">
-                                                {(() => {
-                                                  const maxVisiblePages = 7;
-                                                  const halfVisible = Math.floor(maxVisiblePages / 2);
-                                                  let startPage = Math.max(0, currentPage - halfVisible);
-                                                  let endPage = Math.min(totalPages - 1, startPage + maxVisiblePages - 1);
+                                                    if (endPage - startPage < maxVisible - 1) {
+                                                      startPage = Math.max(1, endPage - maxVisible + 1);
+                                                    }
 
-                                                  // Ajustar startPage se estivermos próximos do fim
-                                                  if (endPage - startPage < maxVisiblePages - 1) {
-                                                    startPage = Math.max(0, endPage - maxVisiblePages + 1);
-                                                  }
-
-                                                  const pages = [];
-
-                                                  // Mostrar primeira página se não estiver visível
-                                                  if (startPage > 0) {
-                                                    pages.push(
-                                                      <button
-                                                        key={0}
-                                                        onClick={() => navigateToPage(column.columnName, 0)}
-                                                        disabled={Object.values(loadingOutliers).some(loading => loading)}
-                                                        className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:cursor-not-allowed"
-                                                      >
-                                                        1
-                                                      </button>
-                                                    );
-
+                                                    // First page
                                                     if (startPage > 1) {
-                                                      pages.push(<span key="ellipsis1" className="text-xs text-gray-400 px-1">...</span>);
-                                                    }
-                                                  }
+                                                      pages.push(
+                                                        <PaginationItem key={1}>
+                                                          <PaginationLink
+                                                            onClick={() => navigateToPage(column.columnName, 1)}
+                                                            className="cursor-pointer"
+                                                          >
+                                                            1
+                                                          </PaginationLink>
+                                                        </PaginationItem>
+                                                      );
 
-                                                  // Páginas visíveis
-                                                  for (let i = startPage; i <= endPage; i++) {
-                                                    pages.push(
-                                                      <button
-                                                        key={i}
-                                                        onClick={() => {
-                                                          console.log(`📄 [PAGE_BUTTON] Page ${i + 1} button clicked for ${column.columnName}`);
-                                                          navigateToPage(column.columnName, i);
-                                                        }}
-                                                        disabled={loadingOutliers[pageKey]}
-                                                        className={`px-2 py-1 text-xs border rounded ${
-                                                          i === currentPage
-                                                            ? 'bg-blue-500 text-white border-blue-500'
-                                                            : 'border-gray-300 hover:bg-gray-100'
-                                                        } disabled:cursor-not-allowed`}
-                                                      >
-                                                        {i + 1}
-                                                      </button>
-                                                    );
-                                                  }
-
-                                                  // Mostrar última página se não estiver visível
-                                                  if (endPage < totalPages - 1) {
-                                                    if (endPage < totalPages - 2) {
-                                                      pages.push(<span key="ellipsis2" className="text-xs text-gray-400 px-1">...</span>);
+                                                      if (startPage > 2) {
+                                                        pages.push(
+                                                          <PaginationItem key="ellipsis1">
+                                                            <PaginationEllipsis />
+                                                          </PaginationItem>
+                                                        );
+                                                      }
                                                     }
 
-                                                    pages.push(
-                                                      <button
-                                                        key={totalPages - 1}
-                                                        onClick={() => navigateToPage(column.columnName, totalPages - 1)}
-                                                        disabled={Object.values(loadingOutliers).some(loading => loading)}
-                                                        className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:cursor-not-allowed"
-                                                      >
-                                                        {totalPages}
-                                                      </button>
-                                                    );
-                                                  }
+                                                    // Visible pages
+                                                    for (let i = startPage; i <= endPage; i++) {
+                                                      pages.push(
+                                                        <PaginationItem key={i}>
+                                                          <PaginationLink
+                                                            onClick={() => navigateToPage(column.columnName, i)}
+                                                            isActive={i === currentPage}
+                                                            className="cursor-pointer"
+                                                          >
+                                                            {i}
+                                                          </PaginationLink>
+                                                        </PaginationItem>
+                                                      );
+                                                    }
 
-                                                  return pages;
-                                                })()}
-                                              </div>
+                                                    // Last page
+                                                    if (endPage < totalPages) {
+                                                      if (endPage < totalPages - 1) {
+                                                        pages.push(
+                                                          <PaginationItem key="ellipsis2">
+                                                            <PaginationEllipsis />
+                                                          </PaginationItem>
+                                                        );
+                                                      }
 
-                                              {/* Próxima página */}
-                                              <button
-                                                onClick={() => navigateToPage(column.columnName, currentPage + 1)}
-                                                disabled={currentPage >= totalPages - 1 || loadingOutliers[pageKey]}
-                                                className="px-2 py-1 text-xs bg-blue-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed"
-                                                title="Próxima"
-                                              >
-                                                Próxima →
-                                              </button>
+                                                      pages.push(
+                                                        <PaginationItem key={totalPages}>
+                                                          <PaginationLink
+                                                            onClick={() => navigateToPage(column.columnName, totalPages)}
+                                                            className="cursor-pointer"
+                                                          >
+                                                            {totalPages}
+                                                          </PaginationLink>
+                                                        </PaginationItem>
+                                                      );
+                                                    }
 
-                                              {/* Última página */}
-                                              <button
-                                                onClick={() => navigateToPage(column.columnName, totalPages - 1)}
-                                                disabled={currentPage >= totalPages - 1 || loadingOutliers[pageKey]}
-                                                className="px-2 py-1 text-xs bg-gray-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed"
-                                                title="Última"
-                                              >
-                                                »»
-                                              </button>
+                                                    return pages;
+                                                  })()}
+
+                                                  <PaginationItem>
+                                                    <PaginationNext
+                                                      onClick={() => currentPage < totalPages && navigateToPage(column.columnName, currentPage + 1)}
+                                                      className={currentPage >= totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                                                    />
+                                                  </PaginationItem>
+                                                </PaginationContent>
+                                              </Pagination>
                                             </div>
-
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-xs text-gray-600">
-                                                Página {currentPage + 1} de {totalPages}
-                                              </span>
-
-                                              {loadingOutliers[pageKey] && (
-                                                <div className="text-xs text-blue-600">Carregando...</div>
-                                              )}
-                                            </div>
-                                          </div>
+                                          )}
 
                                           <div className="max-h-96 overflow-auto border border-gray-200 rounded">
                                             {(() => {
-                                              const isPageLoading = loadingOutliers[pageKey] || false;
-
-                                              if (isPageLoading) {
+                                              if (isLoading) {
                                                 return (
                                                   <div className="p-8 text-center text-gray-500">
                                                     <div className="flex items-center justify-center gap-2">
                                                       <LoadingSpinner size="sm" />
-                                                      <span>Carregando página {currentPage + 1}...</span>
+                                                      <span>Carregando outliers da página {currentPage}...</span>
                                                     </div>
                                                   </div>
                                                 );
@@ -862,16 +739,13 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                                 return (
                                                   <div className="p-8 text-center text-gray-500">
                                                     <div className="flex flex-col items-center gap-2">
-                                                      <span>📄 Página {currentPage + 1} não carregada ainda</span>
-                                                      <span className="text-xs">Esta página contém dados reais do banco, carregue para ver os outliers</span>
+                                                      <span>📄 Página {currentPage} não carregada</span>
+                                                      <span className="text-xs">Clique para carregar os outliers desta página</span>
                                                       <button
-                                                        onClick={() => {
-                                                          console.log(`🔄 [RETRY_BUTTON] Retry button clicked for page ${currentPage + 1} of ${column.columnName}`);
-                                                          navigateToPage(column.columnName, currentPage, true);
-                                                        }}
-                                                        className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 mt-1"
+                                                        onClick={() => navigateToPage(column.columnName, currentPage)}
+                                                        className="px-3 py-1 text-sm bg-orange-500 text-white rounded hover:bg-orange-600 mt-1"
                                                       >
-                                                        🔄 Carregar página
+                                                        🔄 Carregar outliers
                                                       </button>
                                                     </div>
                                                   </div>
@@ -882,26 +756,38 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                                 <table className="min-w-full text-xs">
                                                   <thead className="bg-gray-50 sticky top-0">
                                                     <tr>
-                                                      {Object.keys(displayData[0]?.rowData || {}).map((columnName) => (
-                                                        <th key={columnName} className="px-2 py-1 text-left font-medium text-gray-700 border-b">
-                                                          {columnName}
+                                                      {Object.keys(displayData[0]?.rowData || {}).map((colName) => (
+                                                        <th
+                                                          key={colName}
+                                                          className={`px-2 py-1 text-left font-medium border-b ${
+                                                            colName === column.columnName
+                                                              ? 'text-orange-700 bg-orange-50'
+                                                              : 'text-gray-700'
+                                                          }`}
+                                                        >
+                                                          {colName}
+                                                          {colName === column.columnName && (
+                                                            <span className="ml-1 text-xs text-orange-600">(outlier)</span>
+                                                          )}
                                                         </th>
                                                       ))}
                                                     </tr>
                                                   </thead>
                                                   <tbody>
-                                                    {displayData.map((row, rowIndex) => (
+                                                    {displayData.map((row: any, rowIndex: number) => (
                                                       <tr key={rowIndex} className="hover:bg-gray-50 border-b">
                                                         {Object.entries(row.rowData).map(([colName, value]) => (
                                                           <td
                                                             key={colName}
                                                             className={`px-2 py-1 font-mono ${
                                                               colName === column.columnName
-                                                                ? 'bg-red-100 text-red-800 font-bold'
+                                                                ? 'bg-orange-100 text-orange-900 font-bold'
                                                                 : 'text-gray-700'
                                                             }`}
                                                           >
-                                                            {value?.toString() || 'NULL'}
+                                                            {typeof value === 'number'
+                                                              ? value.toLocaleString()
+                                                              : (value?.toString() || 'NULL')}
                                                           </td>
                                                         ))}
                                                       </tr>
@@ -911,22 +797,19 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                               );
                                             })()}
                                           </div>
-                                        </div>
-                                      ) : (
-                                        <div>
-                                          <div className="text-sm font-medium mb-2">🔍 Valores outliers ({column.outlierAnalysis.outlierCount} total):</div>
-                                          <div className="flex flex-wrap gap-1">
-                                            {column.outlierAnalysis.sampleOutliers.map((outlier, oIndex) => (
-                                              <span key={oIndex} className="text-xs bg-white bg-opacity-60 px-2 py-1 rounded font-mono">
-                                                {outlier.toLocaleString()}
-                                              </span>
-                                            ))}
+
+                                          {/* Nota explicativa */}
+                                          <div className="mt-2 text-xs text-gray-600 bg-orange-50 p-2 rounded">
+                                            💡 <strong>Nota:</strong> Os outliers são ordenados do maior para o menor valor.
+                                            A coluna <strong>{column.columnName}</strong> destacada em <span className="bg-orange-100 text-orange-800 px-1 rounded">laranja</span> contém os valores outliers.
+                                            Use o scroll horizontal para visualizar todas as colunas da tabela.
                                           </div>
                                         </div>
                                       );
                                     })()}
                                   </div>
                                 )}
+
                               </div>
                             )}
                           </div>
@@ -951,9 +834,9 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                   {/* Relações Status-Data */}
                   {metrics.relationshipMetrics.statusDateRelationships.length > 0 && (
                     <div>
-                      <h7 className="font-medium text-blue-800 mb-3 flex items-center gap-2">
+                      <div className="font-medium text-blue-800 mb-3 flex items-center gap-2">
                         🔗 Relações Status ↔ Data Detectadas
-                      </h7>
+                      </div>
                       {metrics.relationshipMetrics.statusDateRelationships.map((relation, rIndex) => (
                         <div key={rIndex} className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
                           <div className="flex items-center justify-between mb-2">
@@ -996,9 +879,9 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                   {/* Correlações Numéricas */}
                   {metrics.relationshipMetrics.numericCorrelations.length > 0 && (
                     <div>
-                      <h7 className="font-medium text-green-800 mb-3 flex items-center gap-2">
+                      <div className="font-medium text-green-800 mb-3 flex items-center gap-2">
                         📈 Correlações Numéricas Fortes
-                      </h7>
+                      </div>
                       {metrics.relationshipMetrics.numericCorrelations.map((correlation, cIndex) => (
                         <div key={cIndex} className="bg-green-50 border border-green-200 rounded-lg p-3 mb-2">
                           <div className="flex items-center justify-between mb-2">
