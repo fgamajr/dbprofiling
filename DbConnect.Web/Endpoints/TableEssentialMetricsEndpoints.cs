@@ -511,7 +511,9 @@ public static class TableEssentialMetricsEndpoints
                 StandardDeviation = outlierAnalysis.StandardDeviation,
                 LowerBound = outlierAnalysis.LowerBound,
                 UpperBound = outlierAnalysis.UpperBound,
-                SampleOutliers = pagedOutliers.Select(r => r.OutlierValue).ToList(),
+                SampleOutliers = pagedOutliers.Select(r =>
+                    r.OutlierValue is double d ? d :
+                    double.TryParse(r.OutlierValue?.ToString(), out var parsed) ? parsed : 0.0).ToList(),
                 OutlierRows = pagedOutliers,
                 CurrentPage = page,
                 PageSize = pageSize

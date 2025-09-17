@@ -47,6 +47,9 @@ builder.Services.AddTransient<PreflightService>();
 builder.Services.AddTransient<SimpleTableMetricsService>();
 builder.Services.AddTransient<IPatternAnalysisService, PatternAnalysisService>();
 
+// Adicionar suporte a controllers
+builder.Services.AddControllers();
+
 // 4) CORS Configuration
 builder.Services.AddCors(options =>
 {
@@ -276,6 +279,7 @@ app.MapGet("/health", () => "ok");
 app.MapProfilesEndpoints();
 app.MapDataQualityV2Endpoints(); // Novos endpoints V2
 app.MapTableEssentialMetricsEndpoints(); // Métricas Essenciais
+app.MapControllers(); // Registrar controllers incluindo DataQualityController
 
 // SPA Fallback deve ser DEPOIS das rotas da API
 app.MapFallbackToFile("index.html");

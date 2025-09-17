@@ -16,6 +16,7 @@ public interface IPatternAnalysisService
 {
     Task<List<AdvancedColumnMetrics>> AnalyzeTablePatterns(string connectionString, string schemaName, string tableName);
     Task<RelationshipMetrics> AnalyzeTableRelationships(string connectionString, string schemaName, string tableName);
+    Task<OutlierAnalysis?> AnalyzeColumnOutliers(string connectionString, string schemaName, string tableName, string columnName, int page, int pageSize);
 }
 
 public class PatternAnalysisService : IPatternAnalysisService
@@ -191,6 +192,120 @@ public class PatternAnalysisService : IPatternAnalysisService
         }
 
         return relationshipMetrics;
+    }
+
+    public async Task<OutlierAnalysis?> AnalyzeColumnOutliers(string connectionString, string schemaName, string tableName, string columnName, int page, int pageSize)
+    {
+        try
+        {
+            _logger.LogInformation("🔢 Analisando outliers paginados para coluna {Column}, página {Page}", columnName, page);
+
+            using var connection = CreateConnection(connectionString);
+            if (connection == null)
+            {
+                _logger.LogError("Falha ao criar conexão");
+                return null;
+            }
+
+            await connection.OpenAsync();
+
+            // Obter metadados das colunas
+            var columns = await GetTableColumns(connection, schemaName, tableName);
+
+            // Query para calcular estatísticas reais da coluna numérica
+            var statsQuery = $@"
+                SELECT
+                    COUNT(*) as total_count,
+                    AVG(CAST(""{columnName}"" AS FLOAT)) as mean_value,
+                    STDDEV(CAST(""{columnName}"" AS FLOAT)) as std_dev,
+                    MIN(CAST(""{columnName}"" AS FLOAT)) as min_value,
+                    MAX(CAST(""{columnName}"" AS FLOAT)) as max_value
+                FROM ""{schemaName}"".""{tableName}""
+                WHERE ""{columnName}"" IS NOT NULL";
+
+            var stats = await connection.QueryFirstOrDefaultAsync<dynamic>(statsQuery);
+            if (stats == null)
+            {
+                _logger.LogWarning("⚠️ Nenhuma estatística retornada para {Column}", columnName);
+                return null;
+            }
+
+            var totalCount = Convert.ToInt32(stats.total_count);
+            var mean = Convert.ToDouble(stats.mean_value ?? 0);
+            var stdDev = Convert.ToDouble(stats.std_dev ?? 0);
+
+            // Calcular limites usando regra dos 3 sigmas
+            var lowerBound = mean - (3 * stdDev);
+            var upperBound = mean + (3 * stdDev);
+
+            // Query para contar o total de outliers
+            var outlierCountQuery = $@"
+                SELECT COUNT(*)
+                FROM ""{schemaName}"".""{tableName}""
+                WHERE ""{columnName}"" IS NOT NULL
+                  AND (CAST(""{columnName}"" AS FLOAT) < {lowerBound} OR CAST(""{columnName}"" AS FLOAT) > {upperBound})";
+
+            var totalOutlierCount = await connection.QuerySingleAsync<int>(outlierCountQuery);
+            var totalPages = (int)Math.Ceiling((double)totalOutlierCount / pageSize);
+
+            // Query para buscar outliers paginados
+            var offset = page * pageSize;
+            var columnsList = string.Join(", ", columns.Select(c => $"\"{c.ColumnName}\""));
+            var outliersQuery = $@"
+                SELECT {columnsList}
+                FROM ""{schemaName}"".""{tableName}""
+                WHERE ""{columnName}"" IS NOT NULL
+                  AND (CAST(""{columnName}"" AS FLOAT) < {lowerBound} OR CAST(""{columnName}"" AS FLOAT) > {upperBound})
+                ORDER BY ABS(CAST(""{columnName}"" AS FLOAT) - {mean}) DESC
+                LIMIT {pageSize} OFFSET {offset}";
+
+            var outlierRows = await connection.QueryAsync(outliersQuery);
+            var outlierRowsData = new List<OutlierRowData>();
+
+            foreach (var row in outlierRows)
+            {
+                var rowDict = (IDictionary<string, object>)row;
+                var outlierValue = rowDict[columnName];
+
+                var rowData = new Dictionary<string, object>();
+                foreach (var kvp in rowDict)
+                {
+                    rowData[kvp.Key] = kvp.Value ?? new object();
+                }
+
+                outlierRowsData.Add(new OutlierRowData
+                {
+                    OutlierValue = outlierValue ?? new object(),
+                    OutlierColumn = columnName,
+                    RowData = rowData
+                });
+            }
+
+            _logger.LogInformation("✅ Outliers paginados encontrados: {Count} da página {Page}/{TotalPages}",
+                outlierRowsData.Count, page + 1, totalPages);
+
+            return new OutlierAnalysis
+            {
+                OutlierRows = outlierRowsData,
+                OutlierCount = totalOutlierCount,
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalValues = totalCount,
+                OutlierPercentage = totalCount > 0 ? (totalOutlierCount / (double)totalCount) * 100 : 0,
+                Mean = mean,
+                StandardDeviation = stdDev,
+                LowerBound = lowerBound,
+                UpperBound = upperBound,
+                SampleOutliers = outlierRowsData.Take(10).Select(r =>
+                    r.OutlierValue is double d ? d :
+                    double.TryParse(r.OutlierValue?.ToString(), out var parsed) ? parsed : 0.0).ToList()
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Erro ao analisar outliers paginados da coluna {Column}: {Error}", columnName, ex.Message);
+            return null;
+        }
     }
 
     private async Task<List<PatternAnalysisResult>> AnalyzeColumnPatterns(DbConnection connection, string schemaName, string tableName, string columnName)

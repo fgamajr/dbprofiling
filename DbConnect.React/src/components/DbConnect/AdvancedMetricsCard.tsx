@@ -39,15 +39,8 @@ interface OutlierRowData {
 }
 
 interface OutlierAnalysis {
-  totalValues: number;
-  outlierCount: number;
-  outlierPercentage: number;
-  mean: number;
-  standardDeviation: number;
-  lowerBound: number;
-  upperBound: number;
-  sampleOutliers: number[];
-  outlierRows: OutlierRowData[];
+  items: OutlierRowData[];
+  totalCount: number;
   currentPage: number;
   pageSize: number;
   totalPages: number;
@@ -102,7 +95,7 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
   const [loadingOutliers, setLoadingOutliers] = useState<Record<string, boolean>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Auto-generate first page from existing data
+  // Auto-load first page when metrics are available
   useEffect(() => {
     if (metrics?.columnMetrics) {
       metrics.columnMetrics.forEach(column => {
@@ -111,7 +104,7 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
           const hasData = outlierData[columnKey];
 
           if (!hasData) {
-            // Generate page 1 with same logic as other pages for consistency
+            // Load page 1 from API
             loadOutlierPage(column.columnName, 1);
           }
         }
@@ -131,105 +124,33 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
 
   async function loadOutlierPage(columnName: string, page: number, pageSize: number = 20) {
     const columnKey = columnName;
-
     setLoadingOutliers(prev => ({ ...prev, [columnKey]: true }));
 
     try {
-      const column = metrics?.columnMetrics.find(c => c.columnName === columnName);
-      if (!column?.outlierAnalysis) {
-        throw new Error('Dados de outlier não disponíveis');
-      }
+      console.log(`🔍 Carregando outliers: ${schema}.${tableName}.${columnName}, página ${page}`);
 
-      const { outlierCount, totalValues, mean, standardDeviation, lowerBound, upperBound } = column.outlierAnalysis;
-      const totalPages = Math.ceil(outlierCount / pageSize);
-      const zeroBasedPage = page - 1; // Convert to zero-based for API
+      const apiUrl = `/api/data-quality/outliers?tableName=${tableName}&schemaName=${schema}&columnName=${columnName}&page=${page - 1}&pageSize=${pageSize}`;
 
-      // Try to fetch ALL outliers for this column if not already cached
-      const allOutliersKey = `${columnKey}_all_outliers`;
-      let allOutliers = (window as any)[allOutliersKey];
-
-      if (!allOutliers) {
-        // First time: try to fetch ALL outliers using a special endpoint
-        try {
-          const apiUrl = `/api/simple-outliers/${schema}/${tableName}/${columnName}?page=0&pageSize=${outlierCount}`; // Request ALL outliers
-
-          const response = await fetch(apiUrl, {
-            signal: abortControllerRef.current?.signal
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            allOutliers = data.outlierRows || [];
-
-            // Cache all outliers globally for this column
-            (window as any)[allOutliersKey] = allOutliers;
-            console.log(`✅ Loaded ${allOutliers.length} outliers for frontend pagination`);
-          }
-        } catch (apiError) {
-          console.log('⚠️ API failed, falling back to sample data');
-        }
-      }
-
-      // Use ALL outliers if available, otherwise fall back to sample
-      const sourceData = allOutliers && allOutliers.length > 0 ? allOutliers : column.outlierAnalysis.outlierRows;
-      const dataSourceInfo = allOutliers && allOutliers.length > 0 ? 'all outliers' : 'sample data';
-
-      if (!sourceData || sourceData.length === 0) {
-        // No data available, return empty
-        const outlierAnalysis: OutlierAnalysis = {
-          ...column.outlierAnalysis,
-          outlierRows: [],
-          sampleOutliers: [],
-          currentPage: page,
-          pageSize,
-        };
-        setOutlierData(prev => ({ ...prev, [columnKey]: outlierAnalysis }));
-        return;
-      }
-
-      console.log(`📊 Using ${dataSourceInfo}: ${sourceData.length} outliers available for pagination`);
-
-      // Sort all available outlier data by the outlier value (descending)
-      const sortedAllRows = [...sourceData].sort((a, b) => {
-        const aValue = typeof a.outlierValue === 'number' ? a.outlierValue : 0;
-        const bValue = typeof b.outlierValue === 'number' ? b.outlierValue : 0;
-        return bValue - aValue;
+      const response = await fetch(apiUrl, {
+        signal: abortControllerRef.current?.signal
       });
 
-      // Paginate the data (either all outliers or sample)
-      const startIdx = zeroBasedPage * pageSize;
-      const endIdx = startIdx + pageSize;
-      const pageOutliers = sortedAllRows.slice(startIdx, endIdx);
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status} - ${response.statusText}`);
+      }
 
-      // Calculate total pages based on available data
-      const actualOutlierCount = sortedAllRows.length;
-      const actualTotalPages = Math.ceil(actualOutlierCount / pageSize);
+      const outlierAnalysis: OutlierAnalysis = await response.json();
 
-      // If using all outliers, use the original outlierCount for display; if sample, use actual count
-      const displayCount = allOutliers && allOutliers.length > 0 ? outlierCount : actualOutlierCount;
+      // Ajustar para 1-based page para display
+      outlierAnalysis.currentPage = page;
 
-      const outlierAnalysis: OutlierAnalysis = {
-        totalValues,
-        outlierCount: displayCount, // Original count for display purposes
-        outlierPercentage: (displayCount / totalValues) * 100,
-        mean,
-        standardDeviation,
-        lowerBound,
-        upperBound,
-        sampleOutliers: pageOutliers, // Current page data
-        outlierRows: pageOutliers,    // Current page data
-        currentPage: page,
-        pageSize,
-        totalPages: actualTotalPages // Pages based on available data
-      };
+      console.log(`✅ Outliers carregados: ${outlierAnalysis.items.length} itens da página ${page}/${outlierAnalysis.totalPages}`);
 
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 300));
       setOutlierData(prev => ({ ...prev, [columnKey]: outlierAnalysis }));
 
     } catch (error) {
       console.error('Error loading outlier page:', error);
-      onToast?.({ type: 'error', message: 'Erro ao carregar outliers paginados' });
+      onToast?.({ type: 'error', message: `Erro ao carregar outliers: ${error instanceof Error ? error.message : 'Erro desconhecido'}` });
     } finally {
       setLoadingOutliers(prev => ({ ...prev, [columnKey]: false }));
     }
@@ -612,7 +533,7 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                     {(() => {
                                       const columnKey = column.columnName;
                                       const currentPageData = outlierData[columnKey];
-                                      const displayData = currentPageData?.outlierRows || [];
+                                      const displayData = currentPageData?.items || [];
                                       const currentPage = currentPageData?.currentPage || 1;
                                       const totalPages = currentPageData?.totalPages || Math.ceil(column.outlierAnalysis.outlierCount / 20);
                                       const isLoading = loadingOutliers[columnKey];
@@ -622,7 +543,7 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                           <div className="text-sm font-medium mb-3 flex items-center gap-2">
                                             🔍 <span>Outliers ordenados (maiores primeiro) - Página {currentPage} de {totalPages}</span>
                                             <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">
-                                              {column.outlierAnalysis.outlierCount.toLocaleString()} total
+                                              {currentPageData?.totalCount || column.outlierAnalysis.outlierCount.toLocaleString()} total
                                             </span>
                                           </div>
 
@@ -756,6 +677,9 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                                 <table className="min-w-full text-xs">
                                                   <thead className="bg-gray-50 sticky top-0">
                                                     <tr>
+                                                      <th className="px-2 py-1 text-center font-medium border-b text-gray-700 bg-blue-50 border-r">
+                                                        #
+                                                      </th>
                                                       {Object.keys(displayData[0]?.rowData || {}).map((colName) => (
                                                         <th
                                                           key={colName}
@@ -774,24 +698,32 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                                     </tr>
                                                   </thead>
                                                   <tbody>
-                                                    {displayData.map((row: any, rowIndex: number) => (
-                                                      <tr key={rowIndex} className="hover:bg-gray-50 border-b">
-                                                        {Object.entries(row.rowData).map(([colName, value]) => (
-                                                          <td
-                                                            key={colName}
-                                                            className={`px-2 py-1 font-mono ${
-                                                              colName === column.columnName
-                                                                ? 'bg-orange-100 text-orange-900 font-bold'
-                                                                : 'text-gray-700'
-                                                            }`}
-                                                          >
-                                                            {typeof value === 'number'
-                                                              ? value.toLocaleString()
-                                                              : (value?.toString() || 'NULL')}
+                                                    {displayData.map((row: any, rowIndex: number) => {
+                                                      // Calcular o número global do outlier considerando a paginação
+                                                      const globalRowNumber = (currentPage - 1) * (currentPageData?.pageSize || 20) + rowIndex + 1;
+
+                                                      return (
+                                                        <tr key={rowIndex} className="hover:bg-gray-50 border-b">
+                                                          <td className="px-2 py-1 text-center font-mono text-blue-700 bg-blue-50 border-r font-semibold">
+                                                            {globalRowNumber}
                                                           </td>
-                                                        ))}
-                                                      </tr>
-                                                    ))}
+                                                          {Object.entries(row.rowData).map(([colName, value]) => (
+                                                            <td
+                                                              key={colName}
+                                                              className={`px-2 py-1 font-mono ${
+                                                                colName === column.columnName
+                                                                  ? 'bg-orange-100 text-orange-900 font-bold'
+                                                                  : 'text-gray-700'
+                                                              }`}
+                                                            >
+                                                              {typeof value === 'number'
+                                                                ? value.toLocaleString()
+                                                                : (value?.toString() || 'NULL')}
+                                                            </td>
+                                                          ))}
+                                                        </tr>
+                                                      );
+                                                    })}
                                                   </tbody>
                                                 </table>
                                               );
@@ -801,6 +733,7 @@ export function AdvancedMetricsCard({ schema, tableName, onToast }: AdvancedMetr
                                           {/* Nota explicativa */}
                                           <div className="mt-2 text-xs text-gray-600 bg-orange-50 p-2 rounded">
                                             💡 <strong>Nota:</strong> Os outliers são ordenados do maior para o menor valor.
+                                            A coluna <span className="bg-blue-100 text-blue-800 px-1 rounded font-mono">#</span> mostra o ranking/posição de cada outlier.
                                             A coluna <strong>{column.columnName}</strong> destacada em <span className="bg-orange-100 text-orange-800 px-1 rounded">laranja</span> contém os valores outliers.
                                             Use o scroll horizontal para visualizar todas as colunas da tabela.
                                           </div>

@@ -38,13 +38,17 @@ public class OutlierAnalysis
     public int CurrentPage { get; set; } = 0;
     public int PageSize { get; set; } = 20;
     public int TotalPages => OutlierCount > 0 ? (int)Math.Ceiling((double)OutlierCount / PageSize) : 0;
+
+    // Novos campos para API paginada conforme documentação
+    public List<OutlierRowData> Items => OutlierRows; // Alias para compatibilidade
+    public int TotalCount => OutlierCount; // Alias para compatibilidade
 }
 
 public class OutlierRowData
 {
-    public double OutlierValue { get; set; }
+    public object OutlierValue { get; set; } = new();
     public string OutlierColumn { get; set; } = string.Empty;
-    public Dictionary<string, object?> RowData { get; set; } = new();
+    public Dictionary<string, object> RowData { get; set; } = new();
 }
 
 public class RelationshipMetrics
