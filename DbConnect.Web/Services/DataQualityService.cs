@@ -81,7 +81,7 @@ public class DataQualityService
             // 4. Executar cada regra
             foreach (var rule in rules.Rules)
             {
-                var result = await ExecuteSingleRuleAsync(conn, quotedTableName, rule, totalRecords, ct);
+                var result = await ExecuteSingleRuleAsync(conn, quotedTableName, rule, totalRecords, schema, tableName, ct);
                 results.Add(result);
 
                 // 5. Salvar resultado no banco
@@ -147,20 +147,30 @@ public class DataQualityService
     }
 
     private async Task<DataQualityRuleResult> ExecuteSingleRuleAsync(
-        NpgsqlConnection conn, string quotedTableName, DataQualityRule rule, 
-        long totalRecords, CancellationToken ct)
+        NpgsqlConnection conn, string quotedTableName, DataQualityRule rule,
+        long totalRecords, string schema, string tableName, CancellationToken ct)
     {
         try
         {
             Console.WriteLine($"🔍 Executando regra: {rule.Name} ({rule.Id})");
-            Console.WriteLine($"   SQL: SELECT COUNT(*) FROM {quotedTableName} WHERE {rule.SqlCondition}");
+            Console.WriteLine($"   SQL ORIGINAL: SELECT COUNT(*) FROM {quotedTableName} WHERE {rule.SqlCondition}");
             
+            // Sanitizar condição SQL para usar aspas duplas corretas
+            var sanitizedCondition = SanitizeSqlCondition(rule.SqlCondition, schema, tableName);
+
             // Construir e executar SQL de validação
-            var validationSql = $"SELECT COUNT(*) FROM {quotedTableName} WHERE {rule.SqlCondition}";
-            
+            var validationSql = $"SELECT COUNT(*) FROM {quotedTableName} WHERE {sanitizedCondition}";
+            Console.WriteLine($"   SQL FINAL: {validationSql}");
+
             await using var validCmd = new NpgsqlCommand(validationSql, conn);
-            var validRecords = Convert.ToInt64(await validCmd.ExecuteScalarAsync(ct));
-            
+            var result = await validCmd.ExecuteScalarAsync(ct);
+            Console.WriteLine($"   🔍 [DEBUG] Raw result type: {result?.GetType().Name ?? "NULL"}");
+            Console.WriteLine($"   🔍 [DEBUG] Raw result value: {result ?? "NULL"}");
+
+            // CORREÇÃO PRINCIPAL: A query conta REGISTROS VÁLIDOS, não problemas!
+            var validRecords = Convert.ToInt64(result ?? 0);
+            var invalidRecords = totalRecords - validRecords;
+            Console.WriteLine($"   🔍 [DEBUG] Final validRecords: {validRecords}, invalidRecords: {invalidRecords}");
             var passRate = totalRecords > 0 ? (double)validRecords / totalRecords * 100.0 : 0.0;
             var status = passRate >= rule.ExpectedPassRate ? "PASS" : "FAIL";
             
@@ -176,7 +186,7 @@ public class DataQualityService
                 ExpectedPassRate = rule.ExpectedPassRate,
                 TotalRecords = totalRecords,
                 ValidRecords = validRecords,
-                InvalidRecords = totalRecords - validRecords,
+                InvalidRecords = invalidRecords,
                 Severity = rule.Severity,
                 ExecutedAt = DateTime.UtcNow
             };
@@ -436,12 +446,18 @@ public class DataQualityService
             Console.WriteLine($"🔍 Executando regra customizada: {rule.Name} ({rule.RuleId})");
             Console.WriteLine($"   SQL: SELECT COUNT(*) FROM {quotedTableName} WHERE {rule.SqlCondition}");
             
+            // Sanitizar condição SQL para usar aspas duplas corretas
+            var sanitizedCondition = SanitizeSqlCondition(rule.SqlCondition, schema, tableName);
+
             // Construir e executar SQL de validação
-            var validationSql = $"SELECT COUNT(*) FROM {quotedTableName} WHERE {rule.SqlCondition}";
-            
+            var validationSql = $"SELECT COUNT(*) FROM {quotedTableName} WHERE {sanitizedCondition}";
+
             await using var validCmd = new NpgsqlCommand(validationSql, conn);
-            var validRecords = Convert.ToInt64(await validCmd.ExecuteScalarAsync());
-            
+            var result = await validCmd.ExecuteScalarAsync();
+
+            // CORREÇÃO PRINCIPAL: A query conta REGISTROS VÁLIDOS, não problemas!
+            var validRecords = Convert.ToInt64(result ?? 0);
+            var invalidRecords = totalRecords - validRecords;
             var passRate = totalRecords > 0 ? (double)validRecords / totalRecords * 100.0 : 0.0;
             var status = passRate >= rule.ExpectedPassRate ? "PASS" : "FAIL";
             
@@ -457,7 +473,7 @@ public class DataQualityService
                 ExpectedPassRate = rule.ExpectedPassRate,
                 TotalRecords = totalRecords,
                 ValidRecords = validRecords,
-                InvalidRecords = totalRecords - validRecords,
+                InvalidRecords = invalidRecords,
                 Severity = rule.Severity,
                 ExecutedAt = DateTime.UtcNow
             };
@@ -788,6 +804,25 @@ public class DataQualityService
     public async Task<DataQualityRuleResult> ExecuteCustomRuleAsync(ConnectionProfile profile, CustomDataQualityRule rule)
     {
         return await ExecuteSingleCustomRuleAsync(profile, rule.Schema, rule.TableName, rule);
+    }
+
+    /// <summary>
+    /// Sanitiza condições SQL geradas pela IA para corrigir problemas de aspas duplas e case sensitivity
+    /// </summary>
+    private static string SanitizeSqlCondition(string sqlCondition, string schema, string tableName)
+    {
+        Console.WriteLine($"🔍 [DEBUG] Original SQL condition: {sqlCondition}");
+
+        // Problema: IA gera "FROM caf_mapa.S_DOC_IDENTIFICACAO" sem aspas duplas
+        // Solução: Substituir por tabela com aspas duplas corretas
+        var unquotedTable = $"{schema}.{tableName}";
+        var quotedTable = $"\"{schema}\".\"{tableName}\"";
+
+        // Substituir referências à tabela sem aspas por referências com aspas
+        var sanitized = sqlCondition.Replace(unquotedTable, quotedTable);
+
+        Console.WriteLine($"🔍 [DEBUG] Sanitized SQL condition: {sanitized}");
+        return sanitized;
     }
 }
 

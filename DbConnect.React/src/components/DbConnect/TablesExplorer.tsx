@@ -851,19 +851,19 @@ export function TablesExplorer({ isConnected, activeProfileId }: TablesExplorerP
                                                   <div>
                                                     <span className="text-gray-500">Registros Válidos:</span>
                                                     <div className="font-medium text-green-700">
-                                                      {result.validRows?.toLocaleString('pt-BR') || '0'}
+                                                      {result.validRecords?.toLocaleString('pt-BR') || '0'}
                                                     </div>
                                                   </div>
                                                   <div>
                                                     <span className="text-gray-500">Registros Inválidos:</span>
                                                     <div className="font-medium text-red-700">
-                                                      {result.invalidRows?.toLocaleString('pt-BR') || '0'}
+                                                      {result.invalidRecords?.toLocaleString('pt-BR') || '0'}
                                                     </div>
                                                   </div>
                                                   <div>
                                                     <span className="text-gray-500">Total Analisado:</span>
                                                     <div className="font-medium text-gray-700">
-                                                      {result.totalRows?.toLocaleString('pt-BR') || '0'}
+                                                      {result.totalRecords?.toLocaleString('pt-BR') || '0'}
                                                     </div>
                                                   </div>
                                                 </div>
