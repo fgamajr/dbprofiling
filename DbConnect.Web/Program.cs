@@ -15,6 +15,8 @@ using System.Text.Json.Serialization;
 using DbConnect.Web.Endpoints; // <— para MapProfilesEndpoints()
 using DbConnect.Web.AI;
 using DbConnect.Web.Services;
+using DbConnect.Web.Services.Enhanced;
+using DbConnect.Web.AI.Enhanced;
 
 
 
@@ -46,6 +48,17 @@ builder.Services.AddTransient<StandardMetricsService>();
 builder.Services.AddTransient<PreflightService>();
 builder.Services.AddTransient<SimpleTableMetricsService>();
 builder.Services.AddTransient<IPatternAnalysisService, PatternAnalysisService>();
+
+// AI Data Profiling Services - New Architecture
+builder.Services.AddTransient<IPostgreSQLSchemaDiscoveryService, PostgreSQLSchemaDiscoveryService>();
+
+// Enhanced AI Data Profiling Services (MCP-based)
+builder.Services.AddTransient<IMCPSchemaDiscoveryEngine, MCPSchemaDiscoveryEngine>();
+builder.Services.AddTransient<IEnhancedContextCollector, EnhancedContextCollector>();
+builder.Services.AddTransient<IEnhancedDataQualityAI, EnhancedDataQualityAI>();
+builder.Services.AddTransient<IMCPTranslationService, MCPTranslationService>();
+builder.Services.AddTransient<IHybridSQLGenerator, HybridSQLGenerator>();
+builder.Services.AddTransient<IIntelligentVisualizationEngine, IntelligentVisualizationEngine>();
 
 // Adicionar suporte a controllers
 builder.Services.AddControllers();

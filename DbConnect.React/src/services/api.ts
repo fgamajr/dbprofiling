@@ -1,3 +1,206 @@
+// Enhanced AI Data Quality Interfaces
+interface EnhancedStatusResponse {
+  success: boolean;
+  status: string;
+  version: string;
+  capabilities: string[];
+  performance: {
+    avgDiscoveryTime: string;
+    avgContextCollectionTime: string;
+    avgAIGenerationTime: string;
+    avgTranslationTime: string;
+    totalPipelineTime: string;
+  };
+}
+
+interface SchemaDiscoveryResponse {
+  success: boolean;
+  message: string;
+  discovery: {
+    databaseName: string;
+    discoveredAt: string;
+    metrics: {
+      totalTables: number;
+      totalColumns: number;
+      declaredFKs: number;
+      implicitRelations: number;
+      statisticalRelations: number;
+      joinPatterns: number;
+    };
+  };
+  schema: {
+    tables: EnhancedTableInfo[];
+    foreignKeys: ForeignKeyInfo[];
+    implicitRelations: ImplicitRelationInfo[];
+    relevantRelations: RelevantRelationInfo[];
+  };
+}
+
+interface EnhancedTableInfo {
+  fullName: string;
+  schema: string;
+  name: string;
+  type: string;
+  columnCount: number;
+  estimatedRows: number;
+  tableSize: string;
+  hasPrimaryKey: boolean;
+  dataQualityScore: number;
+  columns: EnhancedColumnInfo[];
+}
+
+interface EnhancedColumnInfo {
+  name: string;
+  dataType: string;
+  isNullable: boolean;
+  isPrimaryKey: boolean;
+  isForeignKey: boolean;
+  foreignTable?: string;
+  classification: string;
+  distinctValues: number;
+  nullFraction: number;
+}
+
+interface ForeignKeyInfo {
+  source: { table: string; column: string };
+  target: { table: string; column: string };
+  constraintName: string;
+}
+
+interface ImplicitRelationInfo {
+  source: { table: string; column: string };
+  target: { table: string; column: string };
+  confidence: number;
+  method: string;
+  evidence: string;
+}
+
+interface RelevantRelationInfo {
+  source: string;
+  target: string;
+  joinCondition: string;
+  importance: number;
+  type: string;
+  confidence: number;
+  validationOpportunities: string[];
+}
+
+interface ValidationGenerationRequest {
+  tableName: string;
+  businessContext?: string;
+  apiKey?: string;
+  includeSQL?: boolean;
+}
+
+interface ValidationGenerationResponse {
+  success: boolean;
+  message: string;
+  generation: {
+    focusTable: string;
+    contextComplexity: string;
+    relatedTables: number;
+    sampleSize: number;
+    validationsGenerated: number;
+    successfulTranslations: number;
+  };
+  validations: EnhancedValidation[];
+  insights: {
+    typeDistribution: Record<string, number>;
+    keyInsights: string[];
+  };
+  performance: {
+    discoveryDuration: number;
+    contextCollectionDuration: number;
+    aiGenerationDuration: number;
+    translationDuration: number;
+    totalDuration: number;
+  };
+}
+
+interface EnhancedValidation {
+  id: string;
+  number: number;
+  description: string;
+  type: string;
+  priority: number;
+  complexity: string;
+  involvedTables: string[];
+  relevanceScore: number;
+  isValidSQL: boolean;
+  translationMethod: string;
+  sql?: string;
+}
+
+interface EnhancedAnalysisRequest {
+  tableName: string;
+  businessContext?: string;
+  apiKey?: string;
+  includeSQL?: boolean;
+}
+
+interface CompleteAnalysisResponse {
+  success: boolean;
+  message: string;
+  analysis: {
+    focusTable: string;
+    executionTime: number;
+    validationsExecuted: number;
+    issuesDetected: number;
+    averageQuality: number;
+    performanceRating: string;
+  };
+  summary: {
+    totalValidations: number;
+    successfulExecutions: number;
+    failedExecutions: number;
+    totalIssues: number;
+    highPriorityIssues: number;
+    mediumPriorityIssues: number;
+    recommendations: string[];
+  };
+  validations: ExecutedValidation[];
+  dashboard: EnhancedDashboard;
+  performance: {
+    discoveryDuration: number;
+    contextCollectionDuration: number;
+    aiGenerationDuration: number;
+    translationDuration: number;
+    totalDuration: number;
+    rating: string;
+  };
+}
+
+interface ExecutedValidation {
+  id: string;
+  description: string;
+  priority: number;
+  type: string;
+  status: string;
+  issuesDetected: number;
+  totalRecords: number;
+  qualityPercentage: number;
+  executionDuration: number;
+  sql?: string;
+}
+
+interface EnhancedDashboard {
+  id: string;
+  title: string;
+  description: string;
+  layout: any;
+  visualizations: Visualization[];
+  insights: string[];
+}
+
+interface Visualization {
+  id: string;
+  title: string;
+  chartType: string;
+  data: any;
+  configuration: any;
+  priority: number;
+}
+
 interface LoginRequest {
   username: string;
   password: string;
@@ -429,19 +632,79 @@ class ApiService {
       return null;
     }
   }
+
+  // Enhanced AI Data Quality APIs
+  async getEnhancedStatus(): Promise<EnhancedStatusResponse | null> {
+    try {
+      const response = await this.request<EnhancedStatusResponse>('/enhanced-data-quality/status');
+      return response;
+    } catch (error) {
+      console.error('Failed to get enhanced status:', error);
+      return null;
+    }
+  }
+
+  async discoverSchema(): Promise<SchemaDiscoveryResponse | null> {
+    try {
+      const response = await this.request<SchemaDiscoveryResponse>('/enhanced-data-quality/discover-schema', {
+        method: 'POST'
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to discover schema:', error);
+      return null;
+    }
+  }
+
+  async generateValidations(request: ValidationGenerationRequest): Promise<ValidationGenerationResponse | null> {
+    try {
+      const response = await this.request<ValidationGenerationResponse>('/enhanced-data-quality/generate-validations', {
+        method: 'POST',
+        body: JSON.stringify(request)
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to generate validations:', error);
+      return null;
+    }
+  }
+
+  async analyzeComplete(request: EnhancedAnalysisRequest): Promise<CompleteAnalysisResponse | null> {
+    try {
+      const response = await this.request<CompleteAnalysisResponse>('/enhanced-data-quality/analyze-complete', {
+        method: 'POST',
+        body: JSON.stringify(request)
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to analyze complete:', error);
+      return null;
+    }
+  }
 }
 
 export const apiService = new ApiService();
-export type { 
-  User, 
-  Profile, 
-  CreateProfileRequest, 
-  DatabaseInfo, 
-  DatabaseTable, 
-  DatabaseTablesResponse, 
-  TableColumn, 
-  TableIndex, 
+export type {
+  User,
+  Profile,
+  CreateProfileRequest,
+  DatabaseInfo,
+  DatabaseTable,
+  DatabaseTablesResponse,
+  TableColumn,
+  TableIndex,
   TableDetailsResponse,
   ColumnProfilingResponse,
-  TableProfilingResponse
+  TableProfilingResponse,
+  // Enhanced AI Data Quality Types
+  EnhancedStatusResponse,
+  SchemaDiscoveryResponse,
+  ValidationGenerationRequest,
+  ValidationGenerationResponse,
+  EnhancedAnalysisRequest,
+  CompleteAnalysisResponse,
+  EnhancedTableInfo,
+  EnhancedValidation,
+  ExecutedValidation,
+  EnhancedDashboard
 };

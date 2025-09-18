@@ -461,7 +461,7 @@ public class PatternAnalysisService : IPatternAnalysisService
                     var rowDict = (IDictionary<string, object>)row;
                     var outlierValue = Convert.ToDouble(rowDict[columnName]);
 
-                    var rowData = new Dictionary<string, object?>();
+                    var rowData = new Dictionary<string, object>();
                     foreach (var kvp in rowDict)
                     {
                         rowData[kvp.Key] = kvp.Value;
